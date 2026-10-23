@@ -1,0 +1,77 @@
+# linuxdo-hot-digest
+
+> Linux.do 每日热榜追踪与技术内参生成工具链：抓取 Top 100 热帖元数据 → 筛选 3~5 篇高价值内容精读 → 生成以日期命名的 Markdown 日报。
+
+[样例日报（2026-10-23）](reports/2026-10-23.md)
+
+## 背景：为什么抓 Linux.do 这么麻烦
+
+linux.do 部署了相当严格的 Cloudflare 防护，实测（2026-10）各方案的可用性：
+
+| 方案 | 结果 | 对应脚本 |
+| :-- | :-- | :-- |
+| 直连 Discourse JSON 接口（`/hot.json`、`/top.json`） | ❌ 403 "Just a moment"，换 Chrome TLS 指纹（curl_cffi）也无效 | `fetch_hot.py` |
+| Playwright 驱动本机真实 Edge（有头 + 持久化 Profile） | ⚠️ 主页能过验证，但 JSON 接口仍间歇性 403，仅作备用通道 | `browser_fetch.py` |
+| **r.jina.ai 阅读服务中转** | ✅ 稳定可用，jina 的服务端基础设施可正常访问 Discourse JSON | `jina_fetch.py` |
+
+因此日常使用以 `jina_fetch.py` 为主通道，`browser_fetch.py` 备用，`fetch_hot.py` 保留作为直连方案的历史记录（若未来防护策略变化可能复活）。
+
+## 工作流
+
+```
+python jina_fetch.py hot              # 1. 抓 Top 100 元数据 -> data/hot_100.json
+                                       #    （打印紧凑摘要供人工/AI 筛选）
+python jina_fetch.py topic <id> ...    # 2. 对入选的 3~5 篇抓主帖正文 -> data/topic_<id>.json
+                                       #    （人工/AI 精读，撰写分析到 data/analysis.md）
+python gen_report.py [YYYY-MM-DD]      # 3. 组装日报 -> reports/YYYY-MM-DD.md
+```
+
+筛选标准（实用性 / 独创性 / 社区反响）：优先开源工具、深度踩坑、实践教程与高质量首发方案；
+过滤纯水帖、打卡、抽奖与无实质内容的福利帖。
+
+日报格式包含：frontmatter 元信息（日期 / 来源 / 分析总数 / 精选数）、今日大盘概览、
+每篇精选帖的四段式解读（核心分类 / 解决痛点 / 技术要点 / 价值总结）、Hot 100 快速索引表
+（📌 标记置顶旧帖）。
+
+## 安装
+
+```bash
+pip install -r requirements.txt
+```
+
+- `curl_cffi`：主通道（jina 中转）依赖
+- `playwright`：仅备用通道 `browser_fetch.py` 需要，首次使用还需 `playwright install` 或直接使用本机 Edge（脚本已配置 `channel="msedge"`）
+
+## 配置
+
+脚本默认**自动探测系统代理**（Windows 注册表 / 环境变量）。如需显式指定：
+
+```bash
+export LINUXDO_PROXY=http://127.0.0.1:7897   # jina 通道与浏览器通道均生效
+```
+
+中国大陆网络环境下访问 r.jina.ai 通常需要代理；直连可用的环境无需任何配置。
+
+## 目录结构
+
+```
+├── jina_fetch.py      # 主通道：经 r.jina.ai 抓取 hot / topic JSON
+├── browser_fetch.py   # 备用通道：Playwright + Edge 过 Cloudflare 后页面内 fetch
+├── fetch_hot.py       # 历史方案：直连（现被 Cloudflare 拦截）
+├── gen_report.py      # 日报组装：analysis.md + hot_100.json -> reports/
+├── reports/           # 生成的日报（保留样例）
+└── data/              # 运行时产物（git 忽略：热榜 JSON、帖子正文、浏览器 Profile）
+```
+
+`data/analysis.md` 由使用者（人或 AI）撰写——日报的"深度解读"部分本质上是分析产物，
+无法全自动生成；本仓库负责把采集与组装环节工程化。
+
+## 使用须知
+
+- **控制频率**：脚本内置请求间隔（jina 通道 3s），请勿移除；r.jina.ai 免费通道有速率限制，且内容可能存在分钟级缓存。
+- **尊重社区**：数据仅来自公开只读接口（`/hot.json`、`/top.json`、`/t/{id}.json`），请遵守 Linux.do 社区规则，本工具仅供个人学习与研究。
+- **数据时效**：`top.json?period=daily` 反映抓取时刻的热榜，日报请以当天数据为准。
+
+## License
+
+[MIT](LICENSE)

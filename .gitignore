@@ -1,0 +1,15 @@
+# 运行时数据与抓取产物（含浏览器配置/cookie，严禁提交）
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
