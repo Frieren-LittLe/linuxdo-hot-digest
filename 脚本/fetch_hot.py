@@ -15,6 +15,9 @@ from pathlib import Path
 from curl_cffi import requests
 
 BASE = "https://linux.do"
+# 仓库根目录（脚本位于 <repo>/脚本/），data/ 固定落在仓库根下
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DATA = REPO_ROOT / "data"
 HEADERS = {
     "Accept": "application/json",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
@@ -87,7 +90,7 @@ def clean_topic(t, cat_map):
 
 
 def main():
-    out_dir = Path("data")
+    out_dir = DATA
     out_dir.mkdir(exist_ok=True)
 
     # 分类映射

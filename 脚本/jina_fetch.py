@@ -17,7 +17,9 @@ from pathlib import Path
 from curl_cffi import requests
 
 BASE = "https://linux.do"
-DATA = Path("data")
+# 仓库根目录（脚本位于 <repo>/脚本/），data/ 与 reports/ 固定落在仓库根下
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DATA = REPO_ROOT / "data"
 
 
 def detect_proxies():

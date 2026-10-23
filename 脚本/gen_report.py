@@ -5,8 +5,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
-DATA = Path("data")
-REPORTS = Path("reports")
+# 仓库根目录（脚本位于 <repo>/脚本/），data/ 与 reports/ 固定落在仓库根下
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DATA = REPO_ROOT / "data"
+REPORTS = REPO_ROOT / "reports"
 
 
 def fmt_num(n):
@@ -14,10 +16,8 @@ def fmt_num(n):
 
 
 def main():
-    today = date.today().isoformat()
-    if today != "2026-10-23":
-        # 允许显式覆盖日期（脚本当天重跑时数据仍是 2026-10-23 抓取的）
-        today = sys.argv[1] if len(sys.argv) > 1 else today
+    # 日期默认取今天，可用参数显式覆盖（用于用历史数据重跑）
+    today = sys.argv[1] if len(sys.argv) > 1 else date.today().isoformat()
 
     topics = json.loads((DATA / "hot_100.json").read_text(encoding="utf-8"))
     analysis = (DATA / "analysis.md").read_text(encoding="utf-8").rstrip() + "\n"

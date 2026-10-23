@@ -19,12 +19,15 @@ linux.do 部署了相当严格的 Cloudflare 防护，实测（2026-10）各方�
 ## 工作流
 
 ```
-python jina_fetch.py hot              # 1. 抓 Top 100 元数据 -> data/hot_100.json
-                                       #    （打印紧凑摘要供人工/AI 筛选）
-python jina_fetch.py topic <id> ...    # 2. 对入选的 3~5 篇抓主帖正文 -> data/topic_<id>.json
-                                       #    （人工/AI 精读，撰写分析到 data/analysis.md）
-python gen_report.py [YYYY-MM-DD]      # 3. 组装日报 -> reports/YYYY-MM-DD.md
+python 脚本/jina_fetch.py hot              # 1. 抓 Top 100 元数据 -> data/hot_100.json
+                                            #    （打印紧凑摘要供人工/AI 筛选）
+python 脚本/jina_fetch.py topic <id> ...    # 2. 对入选的 3~5 篇抓主帖正文 -> data/topic_<id>.json
+                                            #    （人工/AI 精读，撰写分析到 data/analysis.md）
+python 脚本/gen_report.py [YYYY-MM-DD]      # 3. 组装日报 -> reports/YYYY-MM-DD.md
 ```
+
+脚本按自身位置锚定 `data/` 与 `reports/`（固定落在仓库根目录），在任意工作目录下运行均有效；
+日期参数缺省取当天，可用历史数据重跑时显式指定。
 
 筛选标准（实用性 / 独创性 / 社区反响）：优先开源工具、深度踩坑、实践教程与高质量首发方案；
 过滤纯水帖、打卡、抽奖与无实质内容的福利帖。
@@ -55,12 +58,16 @@ export LINUXDO_PROXY=http://127.0.0.1:7897   # jina 通道与浏览器通道均�
 ## 目录结构
 
 ```
-├── jina_fetch.py      # 主通道：经 r.jina.ai 抓取 hot / topic JSON
-├── browser_fetch.py   # 备用通道：Playwright + Edge 过 Cloudflare 后页面内 fetch
-├── fetch_hot.py       # 历史方案：直连（现被 Cloudflare 拦截）
-├── gen_report.py      # 日报组装：analysis.md + hot_100.json -> reports/
-├── reports/           # 生成的日报（保留样例）
-└── data/              # 运行时产物（git 忽略：热榜 JSON、帖子正文、浏览器 Profile）
+├── README.md
+├── LICENSE
+├── requirements.txt
+├── 脚本/
+│   ├── jina_fetch.py      # 主通道：经 r.jina.ai 抓取 hot / topic JSON
+│   ├── browser_fetch.py   # 备用通道：Playwright + Edge 过 Cloudflare 后页面内 fetch
+│   ├── fetch_hot.py       # 历史方案：直连（现被 Cloudflare 拦截，保留作参考）
+│   └── gen_report.py      # 日报组装：analysis.md + hot_100.json -> reports/
+├── reports/               # 生成的日报（保留样例）
+└── data/                  # 运行时产物（git 忽略：热榜 JSON、帖子正文、浏览器 Profile）
 ```
 
 `data/analysis.md` 由使用者（人或 AI）撰写——日报的"深度解读"部分本质上是分析产物，
