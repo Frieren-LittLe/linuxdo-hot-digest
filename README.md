@@ -2,7 +2,7 @@
 
 > Linux.do 每日热榜追踪与技术内参生成工具链：抓取 Top 100 热帖元数据 → 筛选 3~5 篇高价值内容精读 → 生成以日期命名的 Markdown 日报。
 
-[样例日报（2026-10-23）](reports/2026-10-23.md)
+[样例日报（2026-10-23）](日报/2026-10-23.md)
 
 ## 背景：为什么抓 Linux.do 这么麻烦
 
@@ -23,7 +23,7 @@ python 脚本/jina_fetch.py hot              # 1. 抓 Top 100 元数据 -> data/
                                             #    （打印紧凑摘要供人工/AI 筛选）
 python 脚本/jina_fetch.py topic <id> ...    # 2. 对入选的 3~5 篇抓主帖正文 -> data/topic_<id>.json
                                             #    （人工/AI 精读，撰写分析到 data/analysis.md）
-python 脚本/gen_report.py [YYYY-MM-DD]      # 3. 组装日报 -> reports/YYYY-MM-DD.md
+python 脚本/gen_report.py [YYYY-MM-DD]      # 3. 组装日报 -> 日报/YYYY-MM-DD.md
 ```
 
 脚本按自身位置锚定 `data/` 与 `reports/`（固定落在仓库根目录），在任意工作目录下运行均有效；
@@ -58,17 +58,23 @@ export LINUXDO_PROXY=http://127.0.0.1:7897   # jina 通道与浏览器通道均�
 ## 目录结构
 
 ```
-├── README.md
-├── LICENSE
-├── requirements.txt
-├── 脚本/
-│   ├── jina_fetch.py      # 主通道：经 r.jina.ai 抓取 hot / topic JSON
-│   ├── browser_fetch.py   # 备用通道：Playwright + Edge 过 Cloudflare 后页面内 fetch
-│   ├── fetch_hot.py       # 历史方案：直连（现被 Cloudflare 拦截，保留作参考）
-│   └── gen_report.py      # 日报组装：analysis.md + hot_100.json -> reports/
-├── reports/               # 生成的日报（保留样例）
-└── data/                  # 运行时产物（git 忽略：热榜 JSON、帖子正文、浏览器 Profile）
+├── README.md          # 本说明文档
+├── 脚本/              # 全部可执行脚本（见下方说明）
+│   ├── jina_fetch.py      # 主通道：经 r.jina.ai 抓取热榜与帖子正文
+│   ├── browser_fetch.py   # 备用通道：Playwright + Edge 过 Cloudflare
+│   ├── fetch_hot.py       # 历史方案：直连（现被拦截，仅作参考）
+│   └── gen_report.py      # 日报组装：拼合分析正文与 Hot 100 表格
+├── 日报/              # 生成的日报（样例：2026-10-23.md）
+└── data/              # 运行时产物（热榜 JSON、帖子正文等；被 git 忽略，不上传）
 ```
+
+根目录另有三个**行业约定的标准文件名**，改名会失去对应功能，故保留原样：
+
+| 文件 | 作用 | 为什么不能改名 |
+| :-- | :-- | :-- |
+| `.gitignore` | Git 忽略规则（阻止 `data/` 内的浏览器配置、抓取产物上传） | git 只识别这个固定文件名 |
+| `LICENSE` | 开源协议（MIT） | GitHub 靠它自动识别协议并在仓库页展示标识 |
+| `requirements.txt` | Python 依赖清单（`pip install -r requirements.txt`） | Python 生态的通用约定，工具链默认查找该文件名 |
 
 `data/analysis.md` 由使用者（人或 AI）撰写——日报的"深度解读"部分本质上是分析产物，
 无法全自动生成；本仓库负责把采集与组装环节工程化。

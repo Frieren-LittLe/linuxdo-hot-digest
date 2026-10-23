@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""组装日报：data/analysis.md（头部+分析）+ data/hot_100.json（Hot 100 表）-> reports/YYYY-MM-DD.md"""
+"""组装日报：data/analysis.md（头部+分析）+ data/hot_100.json（Hot 100 表）-> 日报/YYYY-MM-DD.md"""
 import json
 import sys
 from datetime import date
 from pathlib import Path
 
-# 仓库根目录（脚本位于 <repo>/脚本/），data/ 与 reports/ 固定落在仓库根下
+# 仓库根目录（脚本位于 <repo>/脚本/），data/ 与 日报/ 固定落在仓库根下
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA = REPO_ROOT / "data"
-REPORTS = REPO_ROOT / "reports"
+REPORTS = REPO_ROOT / "日报"
 
 
 def fmt_num(n):
