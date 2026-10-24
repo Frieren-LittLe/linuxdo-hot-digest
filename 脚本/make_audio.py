@@ -13,8 +13,10 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import time
 import wave
 from pathlib import Path
 
@@ -27,26 +29,27 @@ VOICE = WS / "voice"
 SR = 44100
 
 VOICE_NAME = "zh-CN-XiaoyiNeural"
-RATE = "+10%"
+RATE = "+15%"
+PROXY = "http://127.0.0.1:7897"
 
-# 段落：img=主立绘, pic=主视觉插图, title=切镜标题, card=指标卡文本, bgm 语义段
+# 段落：img=Q版主立绘(selected_cut), pic=主视觉插图, title=切镜标题, card=指标卡文本
 SEGS = [
-    {"key": "hook", "img": "normal_01", "pic": "1A", "title": "PHP 核弹引爆！Cloudflare 免费帮你挡？", "card": "", "gap_after": 0.9,
-     "text": "昨天 PHP 炸出俩核弹级漏洞？别慌，Cloudflare 免费帮你挡了！我是大肥鱼，开饭！"},
-    {"key": "n1", "img": "shock_01", "pic": "1A", "title": "PHP2Shell 核弹引爆，Cloudflare 紧急 WAF 免费救命", "card": "上手难度 ★★☆☆☆ ｜ 白嫖指数 ★★★★☆ ｜ 核心指路：Cloudflare WAF / 原帖 3054943", "gap_after": 1.0,
-     "text": "PHP 突然爆出 CVE-2026-109618 和 109619 两个远程代码执行核弹，全球建站佬连夜排险。补丁来不及打怎么办？Cloudflare 已经在托管 WAF 里推了紧急规则，免费版默认全开，攻击流量直接拦截。但有个大前提：源站必须只认 Cloudflare 的回源 IP，不然攻击者绕过 CF 直连你的服务器，规则就成了摆设。记住三件事：锁源站、留规则、抓紧升级 PHP。WAF 只是止血，升级才是治病。"},
-    {"key": "n2", "img": "geek_01", "pic": "2A", "title": "伪 POC 满天飞？这篇复盘教你冷静", "card": "上手难度 ★★★☆☆ ｜ 白嫖指数 ★★☆☆☆ ｜ 核心指路：Nginx 缓解组合拳 / 原帖 3065907", "gap_after": 1.0,
-     "text": "同一事件，L 站佬友交出一篇高分复盘。先说结论：真实可用的 POC 依赖二进制硬编码偏移，PHP 版本一变偏移就变，打错一位的结果是搞崩自己服务而不是拿 shell，实际利用门槛极高。网上一堆自称 POC，多半是旧漏洞换皮。补丁没到时可以打组合拳：关掉 session.upload_progress，Nginx 限制请求体，multipart 上传直接拒绝。最扎心的是：事后他问了一圈 AI，全都喊非常严重立即响应，理性一算，多数小站根本不用停机。AI 能加速研判，但风险决策不能外包给模型。"},
-    {"key": "n3", "img": "laugh_03", "pic": "3B", "title": "AI 副业可复制样本：3 天交付 6 单", "card": "上手难度 ★★★☆☆ ｜ 白嫖指数 ★★★★☆ ｜ 核心指路：开源 VVV 框架 / 原帖 3064156", "gap_after": 1.0,
-     "text": "这位佬友结婚缺个暖场视频，外面做一条报价五十，他干脆用 Claude 自己撸：小红书找参考视频，把视频、音乐、婚纱照、文案一股脑丢给模型，复刻成 Remotion 动效，缺素材就调生图能力补齐。结果两三天交付六单，赚了三百多，推广只花三十块。规模化关键是成本解耦：模板制作留给 Claude 烧周限额度，批量生成交给便宜模型。他还开源了 VVV 框架，一套模板二十多个 Agent 通用。想抄作业记住：核心资产是模板库，不是模型调用。"},
-    {"key": "n4", "img": "geek_03", "pic": "4B", "title": "AI 会话是内存，项目目录才是硬盘", "card": "上手难度 ★★☆☆☆ ｜ 白嫖指数 ★★★★★ ｜ 核心指路：npx skills add briqt/knowledge-project / 原帖 3062753", "gap_after": 1.0,
-     "text": "高强度 vibe coding 的老毛病：目标、进度、决策理由全散落在不同会话里，换个窗口就得跟 AI 重新自我介绍。这位佬友开源了 knowledge-project：方法论放在 skill 里，上下文全部落在项目文件。AGENTS.md 存目标和约定，log.md 存进展和下一步，调研结论写成带 frontmatter 的 Markdown。同类问题反复出现就固化成规则，规则膨胀了就精简。不锁定任何 Agent 生态，一条命令安装。核心思想一句话：AI 会话是易失内存，项目目录才是持久磁盘。"},
-    {"key": "n5", "img": "geek_05", "pic": "5C", "title": "不 root 不刷机，老电视焕新实录", "card": "上手难度 ★★★★☆ ｜ 白嫖指数 ★★★★☆ ｜ 核心指路：GitHub morluto/rea / 原帖 3064579", "gap_after": 0.9,
-     "text": "2019 年的小米电视 A50，臃肿到开机要两分钟。这位佬友不 root 不刷机，用无线 ADB 把它压到二十一秒。路数：电视端连点型号开开发者模式，允许 ADB 调试；电脑同一 WiFi 无线连接，再用开源工具 REA 配合 AI 逆向分析系统应用，精准处置自启和冗余组件，全程可回滚。两个坑提前说：电视重启后 ADB 会自动关闭，得重新打开；tvhome 桌面被系统绑定，想换 launcher 得 root，此路不通。家里老电视老盒子，换新之前先抢救一轮。"},
-    {"key": "t1", "img": "token_01", "pic": "6A", "title": "讯飞星辰 MaaS 注册白送 10 亿 Token", "card": "上手难度 ★★☆☆☆ 需实名 ｜ 白嫖指数 ★★★★★ ｜ 核心指路：讯飞星辰 MaaS / 原帖 3060920", "gap_after": 0.6, "bgm": "cute",
-     "text": "又到了小白练手环节！今天吃白饭 Token 的任务是：讯飞星辰 MaaS，注册就送十亿 Token。第一步，搜索讯飞星辰 MaaS 进官网，手机号注册账号。第二步，完成个人实名认证，这是唯一门槛，介意交身份信息的佬友围观就好。第三步，活动页一键领取十亿 Token，写代码调智能体够折腾一个月。"},
-    {"key": "t2", "img": "token_03", "pic": "6A", "title": "防过期提醒", "card": "", "gap_after": 0,
-     "text": "注意：额度只能跑讯飞自家模型，31 天内有效，每人限领一次，领了记得月底前用完，过期不补！今天的白饭 Token 肥鱼吃饱了，你们也别饿着。点个关注，明晚九点，鲸鲸准时开饭！"},
+    {"key": "hook", "img": "normal_06", "pic": "1A", "title": "PHP 出大事了！半个互联网连夜加班", "card": "", "gap_after": 0.9,
+     "text": "这两天程序员圈炸锅了！一个用了三十年的老技术出了天大的漏洞，半个互联网的网站连夜抢修。别怕，我是大肥鱼，今天带你们看戏加捡漏，开饭！"},
+    {"key": "n1", "img": "shock_05", "pic": "1A", "title": "网站漏洞爆发，Cloudflare 免费帮你挡", "card": "上手难度 ★★☆☆☆ ｜ 白嫖指数 ★★★★☆ ｜ 核心指路：Cloudflare 防火墙 / 原帖 3054943", "gap_after": 1.0,
+     "text": "先说这个漏洞有多狠。PHP，全球一大半网站背后的老技术，前两天被扒出两个大洞：坏人看一眼你的网站，就能直接在你的电脑上乱敲命令。修漏洞要时间，等不及的怎么办？Cloudflare，就是帮网站挡流量的那家公司，火速上线了免费防火墙规则，把坏人拦在门外。但你得做一件事：把你服务器的门牌号藏好，只让 Cloudflare 进得来，不然坏人绕后门，规则就白搭了。一句话总结：规则开起来，补丁抓紧打。"},
+    {"key": "n2", "img": "speechless_04", "pic": "2A", "title": "网上全是假黑客？佬友亲测别慌", "card": "上手难度 ★★★☆☆ ｜ 白嫖指数 ★★☆☆☆ ｜ 核心指路：应急复盘 / 原帖 3065907", "gap_after": 1.0,
+     "text": "还是这个漏洞的后续。网上突然冒出一堆人喊：我能一秒黑掉你的网站！吓得好多站长连夜关门。有位佬友冷静下来研究发现：真能用的攻击代码，每台服务器长得都不一样，拿来乱打，大概率先把你自己服务器搞崩。所以大部分小网站真不用慌着关站。还有个细节特别真实：他去问了一圈 AI 助手，个个都说事态紧急赶紧停机，结果自己一算，根本不用停。AI 给个参考可以，拿主意还得是你自己。"},
+    {"key": "n3", "img": "laugh_05", "pic": "3B", "title": "用 AI 做婚礼视频，三天赚回订阅费", "card": "上手难度 ★★★☆☆ ｜ 白嫖指数 ★★★★☆ ｜ 核心指路：开源 VVV 工具 / 原帖 3064156", "gap_after": 1.0,
+     "text": "这位佬友要结婚，婚礼要放个暖场视频，外面做一条五十块。他一拍脑袋：我自己有 AI，凭什么花钱？把找来的参考视频、音乐、婚纱照，一股脑全丢给 Claude 照着做，缺什么图就再让 AI 画。做完顺手挂到二手平台上卖，两三天接了六单，订阅费赚回来了还有富余。他还把整套方法做成了免费开源工具，人人能用。想学的记住一句话：模板才是宝贝，AI 只是打工的。"},
+    {"key": "n4", "img": "geek_03", "pic": "4B", "title": "换个聊天窗口，AI 就把你忘了？", "card": "上手难度 ★★☆☆☆ ｜ 白嫖指数 ★★★★★ ｜ 核心指路：knowledge-project / 原帖 3062753", "gap_after": 1.0,
+     "text": "天天用 AI 干活的佬友肯定懂这个痛苦：换个窗口，AI 就把你忘得一干二净，什么都得从头交代。这位佬友的解决办法特别简单：给项目写两份文档。一份写我们要干什么、定过什么规矩；另一份写干到哪了、下一步干啥。AI 每次开工先读这两份文档，立马接上进度。全部免费开源，一条命令装好。记住这句话：聊天记录会丢，写下来的才算数。"},
+    {"key": "n5", "img": "geek_01", "pic": "5C", "title": "老电视开机两分钟？21 秒搞定", "card": "上手难度 ★★★★☆ ｜ 白嫖指数 ★★★★☆ ｜ 核心指路：开源工具 REA / 原帖 3064579", "gap_after": 0.9,
+     "text": "家里 2019 年买的小米电视，开机要干等两分钟？这位佬友没换新电视，也没拆机刷机，就是用电脑连上电视，把系统里偷偷自启动的软件一个个揪出来关掉，开机时间从两分钟压到二十一秒。用的工具还是免费开源的。提醒两个坑：电视一重启，调试开关会自己关掉，得重新打开；系统桌面换不掉，别白费劲。家里有老电视老盒子的，先抢救一轮再考虑买新的。"},
+    {"key": "t1", "img": "token_03", "pic": "6A", "title": "白嫖时间！注册就送 10 亿 Token", "card": "上手难度 ★★☆☆☆ 需实名 ｜ 白嫖指数 ★★★★★ ｜ 核心指路：讯飞星辰 MaaS / 原帖 3060920", "gap_after": 0.6, "bgm": "cute",
+     "text": "又到了白嫖时间！讯飞开放了大模型平台，新用户注册就送十亿 Token。十亿什么概念？天天写代码、做小工具，一个月都用不完。三步搞定：第一步，搜讯飞星辰，手机号注册。第二步，做个实名认证，这是唯一的门槛，不想提交身份信息的，这期跳过就好。第三步，进活动页，十亿 Token 直接到账！"},
+    {"key": "t2", "img": "token_01", "pic": "6A", "title": "记得用完，过期不补！", "card": "", "gap_after": 0,
+     "text": "敲黑板：额度只有三十一天有效期，只能用讯飞自家的模型，领了就赶紧用，过期不补！好了，今天的白饭，肥鱼吃饱了。明晚九点，我们不见不散，拜拜！"},
 ]
 
 
@@ -127,17 +130,107 @@ def fmt_ts(x):
     return f"{h:02}:{m:02}:{s:02},{ms:03}"
 
 
+FISH_KEY_FILE = REPO_ROOT / "data" / "fish_api_key.txt"
+FISH_VOICE_ID = "fe50cdf3040449298470d58ff0991e1d"  # FishAudio「蓝色大肥鱼」
+FISH_TTS_URL = "https://api.fish.audio/v1/tts"
+
+
+def fish_key():
+    return FISH_KEY_FILE.read_text(encoding="utf-8").strip() if FISH_KEY_FILE.exists() else ""
+
+
+def split_sentences(text):
+    """按标点切句（短句合并到 ~18 字），供逐句 TTS 与句级字幕。"""
+    import re as _re
+    parts = [p for p in _re.split(r"(?<=[？！。；…])", text) if p.strip()]
+    merged, cur = [], ""
+    for p in parts:
+        if len(cur) + len(p) <= 18 or not cur:
+            cur += p
+        else:
+            merged.append(cur)
+            cur = p
+    if cur:
+        merged.append(cur)
+    return merged
+
+
+def fish_tts_sentence(text, out_path, retries=3):
+    """FishAudio TTS 单句合成 -> mp3 文件。"""
+    import urllib.request
+    for i in range(retries):
+        try:
+            body = json.dumps({"text": text, "reference_id": FISH_VOICE_ID,
+                               "format": "mp3", "mp3_bitrate": "128",
+                               "chunk_length": 200, "normalize": True}).encode("utf-8")
+            req = urllib.request.Request(FISH_TTS_URL, data=body, headers={
+                "Authorization": f"Bearer {fish_key()}",
+                "Content-Type": "application/json"})
+            with urllib.request.build_opener(
+                    urllib.request.ProxyHandler({"http": PROXY, "https": PROXY})).open(req, timeout=120) as r:
+                data = r.read()
+            if len(data) < 2000:
+                raise RuntimeError(f"audio too small ({len(data)}B)")
+            Path(out_path).write_bytes(data)
+            return
+        except Exception as e:
+            print(f"[warn] fish tts 重试{i+1}: {e}", flush=True)
+            time.sleep(4 * (i + 1))
+    raise RuntimeError(f"FishAudio 合成失败: {text[:30]}")
+
+
 def main():
     VOICE.mkdir(parents=True, exist_ok=True)
-    # 1. TTS
+    # 1. TTS（fish: 逐句合成并产出句文件清单；edge: 整段合成+词边界；manual: E1 手动mp3）
+    MANUAL = WS / "manual_tts"
+    manual_files = {p.stem.replace("seg_", ""): p for p in MANUAL.glob("seg_*.mp3")} if MANUAL.exists() else {}
+    if manual_files:
+        print(f"[info] manual 引擎：检测到 {len(manual_files)} 段手动音频（字幕将线性对齐实际时长）")
+    use_fish = bool(fish_key()) and not manual_files
+    if not manual_files:
+        print(f"[info] TTS 引擎: {'FishAudio 蓝色大肥鱼' if use_fish else 'edge-tts ' + VOICE_NAME}")
     for seg in SEGS:
-        mp3 = VOICE / f"seg_{seg['key']}.mp3"
-        wj = VOICE / f"seg_{seg['key']}.words.json"
-        if not mp3.exists():
-            print(f"[tts] {seg['key']} ({len(seg['text'])}字)", flush=True)
-            asyncio.run(tts_one(seg["text"], mp3, wj))
+        marker = VOICE / f"seg_{seg['key']}.done"
+        if marker.exists():
+            print(f"[skip] {seg['key']} 已合成")
+            continue
+        if use_fish:
+            print(f"[tts-fish] {seg['key']} ({len(seg['text'])}字)", flush=True)
+            sents = split_sentences(seg["text"])
+            lines = []
+            for i, s in enumerate(sents):
+                out = VOICE / f"seg_{seg['key']}_s{i:02d}.mp3"
+                fish_tts_sentence(s, out)
+                lines.append(s)
+                time.sleep(1)
+            (VOICE / f"seg_{seg['key']}.sentences.json").write_text(
+                json.dumps(lines, ensure_ascii=False), encoding="utf-8")
+            # 拼成整段 mp3（ffmpeg concat）
+            lst = VOICE / f"seg_{seg['key']}.txt"
+            lst.write_text("\n".join(f"file 'seg_{seg['key']}_s{i:02d}.mp3'" for i in range(len(lines))), encoding="utf-8")
+            run_ff(["-f", "concat", "-safe", "0", "-i", str(lst), "-c:a", "libmp3lame", "-q:a", "3",
+                    str(VOICE / f"seg_{seg['key']}.mp3")])
+            (VOICE / f"seg_{seg['key']}.words.json").unlink(missing_ok=True)
         else:
-            print(f"[skip] {mp3.name} 已存在")
+            raw = VOICE / f"seg_{seg['key']}.raw.mp3"
+            if seg["key"] in manual_files:
+                # manual 引擎：edge 只出词边界时间轴，音频换成手动合成的 E1 mp3
+                if not (VOICE / f"seg_{seg['key']}.words.json").exists():
+                    asyncio.run(tts_one(seg["text"], raw, VOICE / f"seg_{seg['key']}.words.json"))
+                    raw.unlink(missing_ok=True)
+                shutil.copy2(manual_files[seg["key"]], VOICE / f"seg_{seg['key']}.mp3")
+                print(f"[manual] {seg['key']} <- {manual_files[seg['key']].name}")
+            else:
+                print(f"[tts-edge] {seg['key']} ({len(seg['text'])}字)", flush=True)
+                asyncio.run(tts_one(seg["text"], raw, VOICE / f"seg_{seg['key']}.words.json"))
+                # Q 弹变声：升调 1.32x + 时长补偿（萌化音色，总长不变）
+                f = 1.32
+                run_ff(["-i", str(raw), "-af",
+                        f"asetrate=44100*{f},aresample=44100,atempo={1/f:.4f}",
+                        "-c:a", "libmp3lame", "-q:a", "3",
+                        str(VOICE / f"seg_{seg['key']}.mp3")])
+                raw.unlink(missing_ok=True)
+        marker.touch()
     # 2. 解码 + 时间轴
     timeline, t = [], 0.6  # 片头留 0.6s
     voice_track_parts = []
@@ -224,12 +317,32 @@ def main():
                                 str(WS / "audio_final.wav")], capture_output=True, text=True).stdout.strip())
     print(f"[ok] audio_final.wav {dur:.1f}s")
 
-    # 7. 字幕
+    # 7. 字幕（edge: 词边界聚合；fish: 逐句实际时长）
     subs, idx = [], 1
     for seg in SEGS:
-        words = json.loads((VOICE / f"seg_{seg['key']}.words.json").read_text(encoding="utf-8"))
-        s, idx = words_to_srt(words, seg["start"], idx)
-        subs += s
+        wj = VOICE / f"seg_{seg['key']}.words.json"
+        if wj.exists():
+            words = json.loads(wj.read_text(encoding="utf-8"))
+            if seg["key"] in manual_files and words:
+                # manual 音频实际时长 vs edge 参考时长 -> 线性缩放词边界
+                edge_end = max(w["t"] + w["d"] for w in words) / 1e7
+                scale = (seg["dur"] / edge_end) if edge_end > 0.1 else 1.0
+                for w in words:
+                    w["t"] = int(w["t"] * scale)
+                    w["d"] = int(w["d"] * scale)
+                print(f"[align] {seg['key']} 缩放 {scale:.3f}")
+            s, idx = words_to_srt(words, seg["start"], idx)
+            subs += s
+        else:
+            sents = json.loads((VOICE / f"seg_{seg['key']}.sentences.json").read_text(encoding="utf-8"))
+            t0 = seg["start"]
+            for i, s_txt in enumerate(sents):
+                swav = VOICE / f"seg_{seg['key']}_s{i:02d}.wav"
+                mp3_to_wav_mono(VOICE / f"seg_{seg['key']}_s{i:02d}.mp3", swav)
+                d = len(read_wav(swav)) / SR
+                subs.append({"i": idx, "start": t0, "end": t0 + d + 0.1, "text": s_txt})
+                idx += 1
+                t0 += d
     # 句尾 0.12s 延时不得侵入下一句（严格轨道校验要求）
     for i in range(len(subs) - 1):
         subs[i]["end"] = min(subs[i]["end"], subs[i + 1]["start"] - 0.01)
