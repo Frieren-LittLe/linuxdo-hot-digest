@@ -66,18 +66,35 @@ def run_ff(args):
         raise RuntimeError(r.stderr[-600:])
 
 
+def mp3_duration(path):
+    tmp = Path(str(path) + ".chk.wav")
+    run_ff(["-i", str(path), "-ar", str(SR), "-ac", "1", str(tmp)])
+    d = len(read_wav(tmp)) / SR
+    tmp.unlink()
+    return d
+
+
 async def tts_one(text, mp3_path, words_path):
+    """edge 合成 + 完整性校验：音频时长必须覆盖词边界末尾，否则重试（防截断）。"""
     import edge_tts
-    c = edge_tts.Communicate(text, VOICE_NAME, rate=RATE, boundary="WordBoundary")
-    audio = bytearray()
-    words = []
-    async for chunk in c.stream():
-        if chunk["type"] == "audio":
-            audio += chunk["data"]
-        elif chunk["type"] == "WordBoundary":
-            words.append({"t": chunk["offset"], "d": chunk["duration"], "w": chunk["text"]})
-    mp3_path.write_bytes(audio)
-    words_path.write_text(json.dumps(words, ensure_ascii=False), encoding="utf-8")
+    for attempt in range(4):
+        c = edge_tts.Communicate(text, VOICE_NAME, rate=RATE, boundary="WordBoundary")
+        audio = bytearray()
+        words = []
+        async for chunk in c.stream():
+            if chunk["type"] == "audio":
+                audio += chunk["data"]
+            elif chunk["type"] == "WordBoundary":
+                words.append({"t": chunk["offset"], "d": chunk["duration"], "w": chunk["text"]})
+        mp3_path.write_bytes(audio)
+        words_path.write_text(json.dumps(words, ensure_ascii=False), encoding="utf-8")
+        words_end = max((w["t"] + w["d"]) for w in words) / 1e7 if words else 0
+        dur = mp3_duration(mp3_path)
+        if dur >= words_end - 1.0:
+            return
+        print(f"[warn] 截断检测：音频 {dur:.1f}s < 词边界 {words_end:.1f}s，重试{attempt + 1}", flush=True)
+        await asyncio.sleep(3)
+    raise RuntimeError(f"TTS 反复截断: {mp3_path.name}")
 
 
 def mp3_to_wav_mono(mp3, wav):
@@ -119,8 +136,11 @@ def words_to_srt(words, seg_start, idx_start):
         sents.append((cur_t0, cur_t1, cur))
     out = []
     for i, (t0, t1, s) in enumerate(sents):
-        out.append({"i": idx_start + i, "start": seg_start + t0 / 1e7,
-                    "end": seg_start + t1 / 1e7 + 0.12, "text": s})
+        st = seg_start + t0 / 1e7
+        en = seg_start + t1 / 1e7 + 0.12
+        if en <= st:
+            en = st + 0.6
+        out.append({"i": idx_start + i, "start": st, "end": en, "text": s})
     return out, idx_start + len(sents)
 
 
@@ -223,10 +243,15 @@ def main():
             else:
                 print(f"[tts-edge] {seg['key']} ({len(seg['text'])}字)", flush=True)
                 asyncio.run(tts_one(seg["text"], raw, VOICE / f"seg_{seg['key']}.words.json"))
-                # Q 弹变声：升调 1.32x + 时长补偿（萌化音色，总长不变）
+                # Q 弹变声：升调 1.32x + 时长补偿（净时长不变；源采样率动态探测，edge 为 24k）
+                sr_in = subprocess.run(
+                    [find_ffmpeg().replace("ffmpeg.exe", "ffprobe.exe"), "-v", "error",
+                     "-select_streams", "a:0", "-show_entries", "stream=sample_rate",
+                     "-of", "csv=p=0", str(raw)], capture_output=True, text=True).stdout.strip()
+                sr_in = int(sr_in or 24000)
                 f = 1.32
                 run_ff(["-i", str(raw), "-af",
-                        f"asetrate=44100*{f},aresample=44100,atempo={1/f:.4f}",
+                        f"asetrate={sr_in}*{f},aresample=44100,atempo={1/f:.4f}",
                         "-c:a", "libmp3lame", "-q:a", "3",
                         str(VOICE / f"seg_{seg['key']}.mp3")])
                 raw.unlink(missing_ok=True)
