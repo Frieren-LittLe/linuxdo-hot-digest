@@ -16,9 +16,9 @@ def fmt_num(n):
 
 
 def parse_dt(s):
-    """解析 Discourse ISO 时间（如 2026-10-23T08:37:40.754Z），失败返回 None。"""
+    """解析 Discourse ISO 时间（如 2026-10-23T08:37:40.754Z，UTC），失败返回 None。"""
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         return None
 
@@ -26,9 +26,13 @@ def parse_dt(s):
 def main():
     # 日期默认取今天，可用参数显式覆盖（用于用历史数据重跑）
     today = sys.argv[1] if len(sys.argv) > 1 else date.today().isoformat()
-    # 统计窗口：报告日前一日 21:00 至报告日 21:00（滚动 24 小时）
-    # 报告日 00:00 往前拨 3 小时即窗口起点
-    window_start = datetime.fromisoformat(today) - timedelta(hours=3)
+    # 统计窗口：报告日前一日 21:00 至报告日 21:00（滚动 24 小时，本地时区）
+    # created_at 为 UTC，必须同为 aware datetime 才能正确比较
+    local_tz = datetime.now().astimezone().tzinfo
+    window_start = (
+        datetime.fromisoformat(f"{today}T21:00:00").replace(tzinfo=local_tz)
+        - timedelta(days=1)
+    )
 
     topics = json.loads((DATA / "hot_100.json").read_text(encoding="utf-8"))
     analysis = (DATA / "analysis.md").read_text(encoding="utf-8").rstrip() + "\n"

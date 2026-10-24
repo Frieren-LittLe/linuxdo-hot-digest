@@ -45,9 +45,9 @@ html,body{width:1080px;height:1528px;overflow:hidden;font-family:"Microsoft YaHe
 #stage{position:relative;width:1080px;height:1528px;
  background:linear-gradient(168deg,#0a0f2e 0%,#122466 46%,#0a1533 100%)}
 #ocean{position:absolute;inset:0}
-#rain{position:absolute;inset:0;opacity:.10}
+#rain{position:absolute;inset:0;opacity:.16}
 #vig{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 40%,transparent 52%,rgba(2,6,26,.6) 100%);pointer-events:none}
-#wm{position:absolute;right:-90px;bottom:-60px;width:760px;opacity:.055;z-index:1;pointer-events:none}
+#wm{position:absolute;right:-90px;bottom:-60px;width:760px;opacity:.09;z-index:1;pointer-events:none}
 /* 顶部横幅 12% */
 #banner{position:absolute;top:0;left:0;right:0;height:183px;padding:20px 36px;
  background:linear-gradient(90deg,rgba(20,38,110,.72),rgba(16,28,80,.55));backdrop-filter:blur(14px);
@@ -139,17 +139,17 @@ function drawOcean(t) {
   oc.clearRect(0, 0, 1080, 1528);
   // 光柱
   const g = oc.createLinearGradient(0, 0, 0, 900);
-  g.addColorStop(0, "rgba(120,150,255,.10)"); g.addColorStop(1, "rgba(120,150,255,0)");
+  g.addColorStop(0, "rgba(120,150,255,.16)"); g.addColorStop(1, "rgba(120,150,255,0)");
   oc.fillStyle = g;
   for (let i = 0; i < 3; i++) {
     oc.beginPath(); oc.moveTo(180 + i * 340, 0);
     oc.lineTo(320 + i * 340, 0); oc.lineTo(460 + i * 340, 900); oc.lineTo(140 + i * 340, 900);
     oc.closePath(); oc.fill();
   }
-  drawWhale(((t * 26) % 1500) - 260, 420, 1.5, .10, false, t);
-  drawWhale(1080 - ((t * 17) % 1500) + 200, 1050, .9, .08, true, t + 3);
+  drawWhale(((t * 26) % 1500) - 260, 420, 1.5, .26, false, t);
+  drawWhale(1080 - ((t * 17) % 1500) + 200, 1050, .9, .20, true, t + 3);
   // 气泡
-  oc.strokeStyle = "rgba(190,215,255,.5)"; oc.lineWidth = 1.6;
+  oc.strokeStyle = "rgba(200,222,255,.85)"; oc.lineWidth = 2.2;
   for (const b of bubbles) {
     const y = 1528 - ((t * b.sp + b.ph) % 1620);
     oc.beginPath(); oc.arc(b.x + Math.sin(t * 1.3 + b.ph) * 10, y, b.r, 0, 7); oc.stroke();
@@ -159,7 +159,7 @@ function drawOcean(t) {
   for (const c of coins) {
     const y = 1528 - ((t * c.sp + c.ph) % 1680);
     const x = c.x + Math.sin(t * .9 + c.ph) * 16;
-    oc.globalAlpha = .5;
+    oc.globalAlpha = .9;
     oc.beginPath(); oc.arc(x, y, c.r, 0, 7);
     oc.fillStyle = "#ffd76a"; oc.fill();
     oc.strokeStyle = "#c9971f"; oc.lineWidth = 2; oc.stroke();
@@ -274,13 +274,27 @@ def main():
             browser.close()
             print("[ok] preview done")
             return
+        browser.close()  # 关闭预载用的初始会话，渲染改为分段重启
         n_frames = int(total * FPS)
-        for i in range(n_frames):
-            page.evaluate(f"seek({i / FPS:.4f})")
-            page.screenshot(path=str(FRAMES / f"f{i:05d}.jpg"), type="jpeg", quality=90)
-            if i % 300 == 0:
-                print(f"[frame] {i}/{n_frames} ({i / FPS:.0f}s)", flush=True)
-        browser.close()
+        RESTART_EVERY = 1200  # 分段重启浏览器，防长会话内存累积导致渲染进程崩溃
+        i = 0
+        while i < n_frames:
+            browser = pw.chromium.launch(channel="msedge", headless=True)
+            page = browser.new_page(viewport={"width": W, "height": H}, device_scale_factor=1)
+            page.goto(page_html.as_uri())
+            page.wait_for_timeout(1500)
+            j_end = min(i + RESTART_EVERY, n_frames)
+            for k in range(i, j_end):
+                fp = FRAMES / f"f{k:05d}.jpg"
+                if fp.exists():
+                    continue  # 断点续渲
+                page.evaluate(f"seek({k / FPS:.4f})")
+                page.screenshot(path=str(fp), type="jpeg", quality=90)
+                if k % 300 == 0:
+                    print(f"[frame] {k}/{n_frames} ({k / FPS:.0f}s)", flush=True)
+            browser.close()
+            print(f"[seg] {i}-{j_end} 完成", flush=True)
+            i = j_end
 
     out = WS / f"大肥鱼的科技日报_{DATE}.mp4"
     subprocess.run([find_ffmpeg(), "-y", "-hide_banner", "-loglevel", "error",
