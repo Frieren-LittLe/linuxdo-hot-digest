@@ -19,14 +19,18 @@ linux.do 部署了相当严格的 Cloudflare 防护，实测（2026-10）各方�
 ## 工作流
 
 ```
-python 脚本/jina_fetch.py hot              # 1. 抓 Top 100 元数据 -> data/hot_100.json
-                                            #    （打印紧凑摘要供人工/AI 筛选）
-python 脚本/jina_fetch.py topic <id> ...    # 2. 对入选的 3~5 篇抓主帖正文 -> data/topic_<id>.json
-                                            #    （人工/AI 精读，撰写分析到 data/analysis.md）
-python 脚本/gen_report.py [YYYY-MM-DD]      # 3. 组装日报 -> 日报/YYYY-MM-DD.md
+python 脚本/daily_runner.py hot             # 1. 抓 Top 100 元数据 -> data/hot_100.json
+                                            #    （运行器自带守护：等代理恢复/卡死超时/空结果重试）
+python 脚本/shortlist.py                   # 2. 规则初筛：剔除窗口外旧帖/往期已解读，按分类权重+互动质量
+                                            #    排序输出候选短名单（控制 AI 阅读量，节省 token）
+python 脚本/jina_fetch.py topic <id> ...    # 3. 对入选的 3~5 篇抓主帖正文 -> data/topic_<id>.json
+python 脚本/shortlist.py read <id> ...      # 4. 输出清洗版正文（剥离推广申明模板/图片占位符）供精读
+python 脚本/gen_report.py [YYYY-MM-DD]      # 5. 组装日报 -> 日报/YYYY-MM-DD.md
 ```
 
-脚本按自身位置锚定 `data/` 与 `reports/`（固定落在仓库根目录），在任意工作目录下运行均有效；
+第 2~4 步之间是"人工/AI 精读并撰写 `data/analysis.md`"的分析环节（四段式解读无法全自动生成）；
+`shortlist.py` 把筛选中的机械部分（去旧帖、去重、降噪、排序）固化成本地脚本，AI 只需在
+~15 条候选里做判断。脚本按自身位置锚定 `data/` 与 `日报/`，在任意工作目录下运行均有效；
 日期参数缺省取当天，可用历史数据重跑时显式指定。
 
 筛选标准（实用性 / 独创性 / 社区反响）：优先开源工具、深度踩坑、实践教程与高质量首发方案；
@@ -61,6 +65,8 @@ export LINUXDO_PROXY=http://127.0.0.1:7897   # jina 通道与浏览器通道均�
 ├── README.md          # 本说明文档
 ├── 脚本/              # 全部可执行脚本（见下方说明）
 │   ├── jina_fetch.py      # 主通道：经 r.jina.ai 抓取热榜与帖子正文
+│   ├── daily_runner.py    # 抓取运行器：等代理恢复 / 卡死超时 / 空结果自动重试
+│   ├── shortlist.py       # 候选短名单 + 正文清洗（筛选机械化，节省 token）
 │   ├── browser_fetch.py   # 备用通道：Playwright + Edge 过 Cloudflare
 │   ├── fetch_hot.py       # 历史方案：直连（现被拦截，仅作参考）
 │   └── gen_report.py      # 日报组装：拼合分析正文与 Hot 100 表格
