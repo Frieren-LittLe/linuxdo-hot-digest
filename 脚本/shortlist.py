@@ -2,8 +2,9 @@
 """筛选短名单 + 正文清洗：把噪音过滤从 AI 挪到本地脚本，压缩日报任务的 token 消耗。
 
 用法:
-  python 脚本/shortlist.py [N]                   # 从 data/hot_100.json 打印前 N 条候选（默认 18）
-  python 脚本/shortlist.py read <id> [<id>...]    # 输出清洗后的帖子正文供精读
+  python 脚本/shortlist.py [N] [YYYY-MM-DD]     # 从 data/hot_100.json 打印前 N 条候选（默认 18）
+                                                # 补做历史日报时传日期，窗口与 gen_report.py 对齐
+  python 脚本/shortlist.py read <id> [<id>...]   # 输出清洗后的帖子正文供精读
 """
 import json
 import math
@@ -51,13 +52,24 @@ def featured_ids():
     return ids
 
 
-def shortlist(n=18):
-    topics = json.loads((DATA / "hot_100.json").read_text(encoding="utf-8"))
+def window_start_for(day=None):
+    """返回统计窗口起点（本地时区 前一日 21:00）。
+
+    day 为 None 时按"当前"推算（日常 21:00 跑的口径）；
+    补做历史日报时显式传日报日期字符串 YYYY-MM-DD，与 gen_report.py 的参数对齐。
+    """
     local_tz = datetime.now().astimezone().tzinfo
-    window_start = (
+    if day:
+        return datetime.fromisoformat(f"{day}T21:00:00").replace(tzinfo=local_tz) - timedelta(days=1)
+    return (
         datetime.now(tz=local_tz).replace(hour=21, minute=0, second=0, microsecond=0)
         - timedelta(days=1)
     )
+
+
+def shortlist(n=18, day=None):
+    topics = json.loads((DATA / "hot_100.json").read_text(encoding="utf-8"))
+    window_start = window_start_for(day)
     done = featured_ids()
 
     cands = []
@@ -136,11 +148,14 @@ def read_topics(ids):
 
 
 def main():
+    # 参数兼容两种用法：<read <id>...> 与 <[N] [YYYY-MM-DD]>
     if len(sys.argv) >= 2 and sys.argv[1] == "read":
         read_topics([int(x) for x in sys.argv[2:] if x.isdigit()])
-    else:
-        n = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else 18
-        shortlist(n)
+        return
+    nums = [a for a in sys.argv[1:] if a.isdigit()]
+    n = int(nums[0]) if nums else 18
+    days = [a for a in sys.argv[1:] if re.fullmatch(r"\d{4}-\d{2}-\d{2}", a)]
+    shortlist(n, days[0] if days else None)
 
 
 if __name__ == "__main__":
