@@ -21,8 +21,10 @@ linux.do 部署了相当严格的 Cloudflare 防护，实测（2026-10）各方�
 ```
 python 脚本/daily_runner.py hot             # 1. 抓 Top 100 元数据 -> data/hot_100.json
                                             #    （运行器自带守护：等代理恢复/卡死超时/空结果重试）
-python 脚本/shortlist.py                   # 2. 规则初筛：剔除窗口外旧帖/往期已解读，按分类权重+互动质量
+python 脚本/shortlist.py [N] [YYYY-MM-DD]  # 2. 规则初筛：剔除窗口外旧帖/往期已解读，按分类权重+互动质量
                                             #    排序输出候选短名单（控制 AI 阅读量，节省 token）
+                                            #    ★ 补做历史日报时必须传日期，否则窗口按"当前时间"算，会与
+                                            #      gen_report.py 的口径错一天、误杀本该入选的帖子
 python 脚本/jina_fetch.py topic <id> ...    # 3. 对入选的 3~5 篇抓主帖正文 -> data/topic_<id>.json
 python 脚本/shortlist.py read <id> ...      # 4. 输出清洗版正文（剥离推广申明模板/图片占位符）供精读
 python 脚本/gen_report.py [YYYY-MM-DD]      # 5. 组装日报 -> 日报/YYYY-MM-DD.md
@@ -39,6 +41,19 @@ python 脚本/gen_report.py [YYYY-MM-DD]      # 5. 组装日报 -> 日报/YYYY-M
 日报格式包含：frontmatter 元信息（日期 / 来源 / 分析总数 / 精选数）、今日大盘概览、
 每篇精选帖的四段式解读（核心分类 / 解决痛点 / 技术要点 / 价值总结）、Hot 100 快速索引表
 （📌 标记置顶旧帖）。
+
+## 补做往期日报（热榜没有历史存档）
+
+Linux.do 热榜是**实时快照，没有历史存档**：某天 21:00 没跑，事后就只能重建。两条路径：
+
+| 情况 | 办法 | 完整度 |
+| :-- | :-- | :-- |
+| 那天抓过一次 | 直接复用 `data/snapshots/hot_<时间戳>.json` 归档快照 | ✅ 完整 100 条 |
+| 那天完全没抓 | `python data/_fetch_weekly.py weekly` 抓周榜，再 `slice <日期>` 按 `created_at` 反筛 | ⚠️ 实测只捞回 ~25 条，且浏览/赞是**当前累计值** |
+
+`jina_fetch.py` 每次 `hot` 抓取都会自动归档一份带时间戳的快照到 `data/snapshots/`（按文件名轮转，保留最近 14 份），
+就是为了把第一类情况变成常态。走周榜重建时，`gen_report.py` 检测到条数 < 100 会自动把索引表说明切换为"补记"口径，
+报告里也应写明数据来源与局限。
 
 ## 安装
 
