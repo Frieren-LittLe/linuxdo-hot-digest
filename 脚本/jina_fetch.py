@@ -3,7 +3,7 @@
 IP 的拦截）。输出与 browser_fetch.py 相同结构的精简数据。
 
 用法:
-  python jina_fetch.py hot       # -> data/hot_100.json
+  python jina_fetch.py hot       # -> data/hot_100.json（并归档一份带时间戳的快照）
   python jina_fetch.py topic <id> [<id>...]  # -> data/topic_<id>.json
 """
 import json
@@ -12,6 +12,7 @@ import re
 import sys
 import time
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from curl_cffi import requests
@@ -87,6 +88,28 @@ def strip_html(text):
     return re.sub(r"\n{3,}", "\n\n", text).strip()
 
 
+SNAP_DIR = DATA / "snapshots"
+SNAP_KEEP = 14  # 只保留最近 14 份快照（约两周）
+
+
+def archive_snapshot(topics):
+    """把本次抓取结果另存一份带时间戳的快照。
+
+    linux.do 热榜是实时快照、没有历史存档：一旦某天 21:00 没跑，事后只能用
+    「周榜 period=weekly 按 created_at 反筛」重建，会丢掉当天小火、后来沉掉的
+    帖子（实测一天只能捞回 ~25 条）。每抓一次就留一份，漏做时至少能拿到真实快照。
+    """
+    SNAP_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().astimezone().strftime("%Y-%m-%dT%H%M")
+    payload = json.dumps(topics, ensure_ascii=False, indent=1)
+    (SNAP_DIR / f"hot_{stamp}.json").write_text(payload, encoding="utf-8")
+    # 轮转清理：按文件名排序（时间戳字典序 = 时间序），只留最近 SNAP_KEEP 份
+    snaps = sorted(SNAP_DIR.glob("hot_*.json"))
+    for old in snaps[:-SNAP_KEEP]:
+        old.unlink()
+    print(f"[ok] snapshot -> data/snapshots/hot_{stamp}.json（保留最近 {SNAP_KEEP} 份）", flush=True)
+
+
 def fetch_hot():
     cat_map = {}
     cats, _ = jina_get(BASE + "/categories.json")
@@ -128,6 +151,7 @@ def fetch_hot():
 
     DATA.mkdir(exist_ok=True)
     (DATA / "hot_100.json").write_text(json.dumps(topics, ensure_ascii=False, indent=1), encoding="utf-8")
+    archive_snapshot(topics)
     print(f"[ok] saved {len(topics)} topics -> data/hot_100.json", flush=True)
     for i, t in enumerate(topics, 1):
         print(f"#{i}|{t['id']}|{t['title'][:60]}|cat={t['category']}|v={t['views']}|like={t['like_count']}|reply={t['posts_count']}|{t['excerpt'][:80]}")
