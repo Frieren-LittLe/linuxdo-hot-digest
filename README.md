@@ -49,7 +49,7 @@ Linux.do 热榜是**实时快照，没有历史存档**：某天 21:00 没跑，
 | 情况 | 办法 | 完整度 |
 | :-- | :-- | :-- |
 | 那天抓过一次 | 直接复用 `data/snapshots/hot_<时间戳>.json` 归档快照 | ✅ 完整 100 条 |
-| 那天完全没抓 | `python data/_fetch_weekly.py weekly` 抓周榜，再 `slice <日期>` 按 `created_at` 反筛 | ⚠️ 实测只捞回 ~25 条，且浏览/赞是**当前累计值** |
+| 那天完全没抓 | `python 脚本/backfill.py weekly` 抓周榜，再 `slice <日期>` 按 `created_at` 反筛 | ⚠️ 实测只捞回 ~25 条，且浏览/赞是**当前累计值** |
 
 `jina_fetch.py` 每次 `hot` 抓取都会自动归档一份带时间戳的快照到 `data/snapshots/`（按文件名轮转，保留最近 14 份），
 就是为了把第一类情况变成常态。走周榜重建时，`gen_report.py` 检测到条数 < 100 会自动把索引表说明切换为"补记"口径，
@@ -84,6 +84,7 @@ export LINUXDO_PROXY=http://127.0.0.1:7897   # jina 通道与浏览器通道均�
 │   ├── shortlist.py       # 候选短名单 + 正文清洗（筛选机械化，节省 token）
 │   ├── browser_fetch.py   # 备用通道：Playwright + Edge 过 Cloudflare
 │   ├── fetch_hot.py       # 历史方案：直连（现被拦截，仅作参考）
+│   ├── backfill.py        # 补做往期：抓周榜并按 created_at 反筛出某天的候选池
 │   └── gen_report.py      # 日报组装：拼合分析正文与 Hot 100 表格
 ├── 日报/              # 生成的日报（样例：2026-10-23.md）
 └── data/              # 运行时产物（热榜 JSON、帖子正文等；被 git 忽略，不上传）
