@@ -5,6 +5,9 @@ data/
 AI交接提示词.md
 交接快照_2026-10-26.md
 
+# 编辑器 / Agent 的本地工作数据（memory 等，不进仓库）
+.workbuddy/
+
 # Python
 __pycache__/
 *.pyc
