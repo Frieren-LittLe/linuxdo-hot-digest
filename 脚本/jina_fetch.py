@@ -22,6 +22,20 @@ BASE = "https://linux.do"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA = REPO_ROOT / "data"
 
+# categories.json 偶发被 r.jina.ai 限流（HTTP 401 bad IP reputation）时的静态兜底：
+# Linux.do 主分区 id -> 显示名。否则 hot_100.json 会退化成纯数字分类，
+# 日报索引表与 shortlist.py 的分类权重都会失效。
+CAT_FALLBACK = {
+    2: "运营反馈",
+    4: "Develop",
+    11: "搞七捻三",
+    14: "资源荟萃",
+    27: "非我莫属",
+    34: "前沿快讯",
+    36: "福利羊毛",
+    98: "国产替代",
+}
+
 
 def detect_proxies():
     """代理配置：LINUXDO_PROXY 环境变量优先，其次系统代理，均无则 None（直连）。"""
@@ -92,13 +106,19 @@ SNAP_DIR = DATA / "snapshots"
 SNAP_KEEP = 14  # 只保留最近 14 份快照（约两周）
 
 
-def archive_snapshot(topics):
+def archive_snapshot(topics, min_topics=30):
     """把本次抓取结果另存一份带时间戳的快照。
 
     linux.do 热榜是实时快照、没有历史存档：一旦某天 21:00 没跑，事后只能用
     「周榜 period=weekly 按 created_at 反筛」重建，会丢掉当天小火、后来沉掉的
     帖子（实测一天只能捞回 ~25 条）。每抓一次就留一份，漏做时至少能拿到真实快照。
+
+    ⚠️ 抓取失败（空数组 / 只有占位记录）时**绝不归档**：空快照既会挤掉轮转窗口里
+    的有效快照，又会让 backfill.slice 误命中"当日有数据"而产出空日报。
     """
+    if len(topics) < min_topics:
+        print(f"[warn] 仅 {len(topics)} 条（<{min_topics}），跳过快照归档，避免污染历史", flush=True)
+        return
     SNAP_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().astimezone().strftime("%Y-%m-%dT%H%M")
     payload = json.dumps(topics, ensure_ascii=False, indent=1)
@@ -111,7 +131,7 @@ def archive_snapshot(topics):
 
 
 def fetch_hot():
-    cat_map = {}
+    cat_map = dict(CAT_FALLBACK)  # 先铺静态兜底，在线结果再覆盖
     cats, _ = jina_get(BASE + "/categories.json")
     if isinstance(cats, dict) and "category_list" in cats:
         for c in cats["category_list"].get("categories", []):
@@ -150,6 +170,11 @@ def fetch_hot():
         time.sleep(3)
 
     DATA.mkdir(exist_ok=True)
+    # 抓失败时保留上一份好数据，并以非零退出码告诉 daily_runner「要重试」。
+    # 否则空数组会覆盖 hot_100.json（2026-11-04 真实踩过：好数据被 [] 冲掉）。
+    if len(topics) < 30:
+        print(f"[error] 只拿到 {len(topics)} 条，判定抓取失败；保留原有 hot_100.json 与快照不动", flush=True)
+        sys.exit(1)
     (DATA / "hot_100.json").write_text(json.dumps(topics, ensure_ascii=False, indent=1), encoding="utf-8")
     archive_snapshot(topics)
     print(f"[ok] saved {len(topics)} topics -> data/hot_100.json", flush=True)
