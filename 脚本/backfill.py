@@ -11,6 +11,7 @@
   python 脚本/backfill.py slice 2026-10-29      # 按窗口切片 -> data/hot_100_<day>.json
 """
 import json
+import re
 import sys
 import time
 from datetime import datetime, timedelta
@@ -73,15 +74,38 @@ def fetch_weekly(pages=8):
     print(f"[ok] saved {len(topics)} -> {out}", flush=True)
 
 
+def _snapshot_at_window_close(path):
+    """快照必须是报告日 21:00 **之后**抓的，才算该窗口闭合时的完整热榜。
+
+    凌晨/上午抓的快照覆盖的是「上一日 21:00 ~ 抓取时刻」，拿它当报告日的完整榜单会
+    少掉大半天数据。例如 11-04 00:17 抓的 hot_2026-11-04T0017.json 不能用于 11-04 日报。
+    """
+    m = re.search(r"hot_\d{4}-\d{2}-\d{2}T(\d{2})(\d{2})\.json$", path.name)
+    return bool(m) and int(m.group(1)) * 60 + int(m.group(2)) >= 21 * 60
+
+
 def slice_day(day, also_merge_hot=True):
     """按 gen_report 的窗口定义（报告日前一日 21:00 ~ 当日 21:00，本地时区）切片。"""
-    local_tz = datetime.now().astimezone().tzinfo
+    now = datetime.now().astimezone()
+    local_tz = now.tzinfo
     end = datetime.fromisoformat(f"{day}T21:00:00").replace(tzinfo=local_tz)
     start = end - timedelta(days=1)
 
+    # 今天 21:00 之前窗口还没闭合，无论有没有快照都不能补做当天（会缺半天数据）。
+    if day == now.date().isoformat() and now < end:
+        raise SystemExit(
+            f"[error] {day} 是今天，当前 {now:%H:%M} < 21:00，统计窗口尚未闭合，"
+            f"不能补做当天日报；等 21:00 主任务运行后再说。"
+        )
+
     # 优先用当天归档的真实快照（jina_fetch 每次抓取都会另存一份到 data/snapshots/），
-    # 它比"周榜反筛"完整得多；只有没有归档时才退化到周榜重建。
-    snaps = sorted((DATA / "snapshots").glob(f"hot_{day}T*.json"))
+    # 它比"周榜反筛"完整得多；只有没有合格归档时才退化到周榜重建。
+    all_snaps = sorted((DATA / "snapshots").glob(f"hot_{day}T*.json"))
+    snaps = [p for p in all_snaps if _snapshot_at_window_close(p) and
+             len(json.loads(p.read_text(encoding="utf-8"))) >= 30]
+    if all_snaps and not snaps:
+        print(f"[warn] {day} 的 {len(all_snaps)} 份快照均在 21:00 前抓取或为空，"
+              f"不能当作窗口闭合时的完整热榜，已跳过", flush=True)
     if snaps:
         # 归档快照就是当天那次抓取的完整榜单：整表沿用、保持原始排名顺序，
         # 让 gen_report 照常规给窗口外旧帖打 📌，产出的报告与正常日报完全同构。
