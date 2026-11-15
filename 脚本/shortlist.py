@@ -42,13 +42,22 @@ def parse_dt(s):
 
 
 def featured_ids():
-    """扫描历史日报的精选标题行，返回已深度解读过的帖子 id 集合。"""
+    """扫描历史日报的精选段落，返回已深度解读过的帖子 id 集合。
+
+    实际日报格式是「### N. 纯文本标题」+ 下一行「[https://linux.do/t/topic/ID](...)」，
+    旧正则要求标题本身是 markdown 链接，永远匹配不到，导致跨期去重形同虚设。
+    改为只截取「## 🔍 精选深度解读」到「## 📊 索引表」之间的段落，
+    收集其中所有 topic id（含正文里顺带引用的链接，避免把索引表的 100 个链接算进来）。
+    """
     ids = set()
     if not REPORTS.exists():
         return ids
-    pat = re.compile(r"^###\s*\d+\.\s*\[.*?\]\(https?://linux\.do/t/topic/(\d+)", re.M)
+    pat = re.compile(r"linux\.do/t/topic/(\d+)")
     for f in sorted(REPORTS.glob("*.md")):
-        ids.update(int(x) for x in pat.findall(f.read_text(encoding="utf-8")))
+        txt = f.read_text(encoding="utf-8")
+        m = re.search(r"## 🔍 精选深度解读(.*?)(?=## 📊|\Z)", txt, re.S)
+        if m:
+            ids.update(int(x) for x in pat.findall(m.group(1)))
     return ids
 
 
